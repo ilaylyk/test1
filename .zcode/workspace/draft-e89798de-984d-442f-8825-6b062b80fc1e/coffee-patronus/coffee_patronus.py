@@ -2,7 +2,7 @@
 """Procedural "coffee patronus": a cup of coffee rendered as a glowing smoke spirit.
 
 The picture is built from scratch with numpy + Pillow (no image model, no external
-assets): a glassy cup of revolution, smoke ribbons made of wandering filaments,
+assets): a glassy cup of revolution, smoke ribbons made of torn, wandering filaments,
 sparks, bloom and a tone ramp.
 
 Usage:
@@ -36,15 +36,15 @@ COFFEE = [(0.0, (4, 2, 1)), (0.12, (18, 9, 4)), (0.3, (52, 26, 10)), (0.5, (112,
 # Steam layout in rim radii, X right / Y up from the rim centre:
 # ("w", x, y) is a waypoint, ("l", radius, turn, turns) a curl (+1 = counter-clockwise).
 STEAM_RIBBONS = [
-    [("w", -0.70, 0.87), ("w", -0.95, 1.56), ("l", 0.72, 1, 1.0), ("w", -1.90, 2.39), ("w", -1.50, 3.59)],
-    [("w", 0.70, 1.01), ("w", 1.00, 2.12), ("l", 0.80, -1, 1.0), ("w", 1.90, 3.22), ("w", 1.70, 4.42)],
+    [("w", -0.70, 1.10), ("w", -1.00, 1.90), ("l", 0.72, 1, 0.85), ("w", -1.90, 2.90), ("w", -1.60, 4.10)],
+    [("w", 0.70, 1.01), ("w", 1.00, 2.12), ("l", 0.80, -1, 0.9), ("w", 1.90, 3.22), ("w", 1.70, 4.42)],
     [("w", -0.45, 1.47), ("w", -0.75, 2.48), ("w", -0.20, 3.59), ("w", -0.55, 4.69), ("w", -0.10, 5.43)],
-    [("w", 0.40, 1.66), ("w", 0.60, 3.04), ("l", 0.60, -1, 1.0), ("w", 1.50, 4.23), ("w", 1.80, 5.06)],
-    [("w", -0.40, 1.84), ("w", -0.60, 3.50), ("l", 0.55, 1, 1.0), ("w", -1.40, 4.69), ("w", -1.60, 5.34)],
+    [("w", 0.40, 1.66), ("w", 0.60, 3.04), ("l", 0.60, -1, 0.8), ("w", 1.50, 4.23), ("w", 1.80, 5.06)],
+    [("w", -0.40, 2.30), ("w", -0.60, 3.90), ("l", 0.55, 1, 0.75), ("w", -1.40, 4.90), ("w", -1.60, 5.40)],
     [("w", 0.20, 2.39), ("w", 0.30, 4.23), ("w", -0.40, 5.06), ("w", -1.30, 5.34), ("w", -2.00, 4.97)],
     [("w", -0.20, 2.30), ("w", 0.50, 3.96), ("w", 1.10, 4.97), ("w", 1.90, 5.24), ("w", 2.40, 4.78)],
-    [("w", 0.60, 0.37), ("w", 1.00, 0.83), ("l", 0.50, -1, 1.0), ("w", 1.60, 1.56), ("w", 1.50, 2.58)],
-    [("w", -0.60, 0.37), ("w", -1.00, 0.74), ("l", 0.48, 1, 1.0), ("w", -1.60, 1.38), ("w", -1.70, 2.39)],
+    [("w", 0.60, 0.37), ("w", 1.00, 0.83), ("l", 0.50, -1, 0.8), ("w", 1.60, 1.56), ("w", 1.50, 2.58)],
+    [("w", -0.60, 0.37), ("w", -1.00, 0.74), ("l", 0.48, 1, 0.85), ("w", -1.60, 1.38), ("w", -1.70, 2.10)],
 ]
 
 PALETTES = ("blue", "coffee", "mixed")
@@ -283,7 +283,7 @@ def ellipse_coverage(g, X, Y, scale=1.0):
 
 # ----------------------------------------------------------------------------- smoke
 
-def ribbon_points(rng, start, segments):
+def ribbon_points(rng, start, segments, bow=0.12):
     """Control points of a smoke ribbon from a small route description (same units as the route)."""
     pts = [np.array(start, dtype=np.float64)]
     for seg in segments:
@@ -291,9 +291,9 @@ def ribbon_points(rng, start, segments):
             target = np.array(seg[1:]) + rng.normal(0.0, 0.08, 2)
             p0, p1 = pts[-1], target
             d = p1 - p0
-            bow = rng.normal(0.0, 0.12) * np.array([-d[1], d[0]]) / (np.linalg.norm(d) + 1e-9)
+            arc_bow = rng.normal(0.0, bow) * np.array([-d[1], d[0]]) / (np.linalg.norm(d) + 1e-9)
             for t in (1.0 / 3.0, 2.0 / 3.0):
-                pts.append(p0 + d * t + bow * math.sin(math.pi * t))
+                pts.append(p0 + d * t + arc_bow * math.sin(math.pi * t))
             pts.append(p1)
         else:
             _, rho, turn, turns = seg
@@ -306,34 +306,51 @@ def ribbon_points(rng, start, segments):
             squash = rng.uniform(0.0, 0.28)                          # curls are flattened, not circular
             tilt = rng.uniform(0.0, math.pi)
             grow = rng.uniform(0.18, 0.40)
+            phase = rng.uniform(0.0, 2.0 * math.pi, 2)
             for k in range(1, m + 1):
                 a = a0 + turn * 2.0 * math.pi * turns * k / m
-                r = rho * (1.0 + grow * k / m) * (1.0 + squash * math.cos(2.0 * (a - tilt)))
+                lump = 1.0 + 0.12 * math.sin(3.0 * a + phase[0]) + 0.07 * math.sin(5.0 * a + phase[1])
+                r = rho * (1.0 + grow * k / m) * (1.0 + squash * math.cos(2.0 * (a - tilt))) * lump
                 pts.append(c + r * np.array([math.cos(a), math.sin(a)]))
     return np.array(pts)
 
 
-def draw_ribbon(layer, curve, rng, lat, g, q, gain, width, warm, fade=0.45, haze=1.0, back=None, back_mask=None):
-    """A smoke ribbon: a widening band of soft filaments along a centreline (screen px).
+def draw_ribbon(layer, curve, rng, lat, g, q, gain, width, warm, fade=0.45, haze=1.0, back=None,
+                back_mask=None, meander=1.0, filaments=(14, 26)):
+    """A smoke ribbon: a band of soft, broken filaments along a meandering centreline (screen px).
 
+    The centreline wanders more and more downstream, the band swells and thins, and every filament
+    fades in and out, so the band reads as torn smoke rather than a tube.
     With `back`/`back_mask` the band is split by depth: samples flagged in back_mask go to the back layer.
     Returns the core sample positions and weights (used to seed sparks).
     """
-    n = max(4, int(rng.integers(14, 26) * q))
+    n = max(3, int(rng.integers(filaments[0], filaments[1]) * q))
     m = curve.shape[0]
     s = np.linspace(0.0, 1.0, m)[:, None]
-    tangent = np.gradient(curve, axis=0)
-    norm = np.hypot(tangent[:, 0], tangent[:, 1]) + 1e-9
-    nrm = np.stack([-tangent[:, 1] / norm, tangent[:, 0] / norm], axis=1)[:, None, :]
-    half = width * g.s * (0.45 + 1.0 * s ** 0.9)                 # the band widens along the ribbon
+
+    def normal(c):
+        tangent = np.gradient(c, axis=0)
+        norm = np.hypot(tangent[:, 0], tangent[:, 1]) + 1e-9
+        return np.stack([-tangent[:, 1] / norm, tangent[:, 0] / norm], axis=1)
+
+    drift = meander * width * g.s * (0.15 + 0.9 * s) \
+        * (0.8 * noise1(s * 3.0 + rng.uniform(0.0, 100.0), lat) + 0.45 * noise1(s * 7.0 + rng.uniform(0.0, 100.0), lat))
+    curve = curve + drift[:, 0, None] * normal(curve)
+    nrm = normal(curve)[:, None, :]
+    pulse = np.clip(0.55 + 0.9 * noise1(s * 4.0 + rng.uniform(0.0, 100.0), lat), 0.15, None)
+    half = width * g.s * (0.45 + 1.0 * s ** 0.9) * pulse            # the band widens and swells downstream
     wander = (4.0 + 18.0 * s) * g.s * noise1(s * 5.0 + rng.uniform(0.0, 100.0, (1, n)), lat)
     off = 0.7 * rng.normal(0.0, 1.0, (1, n)) * half + wander \
         + 3.0 * g.s * noise1(s * 14.0 + rng.uniform(0.0, 100.0, (1, n)), lat)
     pos = curve[:, None, :] + off[..., None] * nrm
     core = np.exp(-((off / half) ** 2) / 0.6)                     # brighter in the middle of the band
-    env = smoothstep(0.0, 0.2, s) * (1.0 - smoothstep(fade, 1.0, s)) ** 1.3
-    streak = 0.3 + 0.7 * np.clip(0.5 + noise1(s * 9.0 + rng.uniform(0.0, 100.0, (1, n)), lat), 0.0, 1.0) ** 1.2
-    w = gain * env * streak * core
+    # every filament breaks into strands at its own rhythm
+    cut = rng.uniform(-0.25, 0.2, (1, n))
+    vis = smoothstep(cut - 0.08, cut + 0.12,
+                     noise1(s * rng.uniform(2.0, 6.0, (1, n)) + rng.uniform(0.0, 100.0, (1, n)), lat))
+    swell = 0.35 + 1.1 * np.clip(0.5 + noise1(s * 5.0 + rng.uniform(0.0, 100.0), lat), 0.0, 1.0) ** 1.5
+    env = smoothstep(0.02, 0.3, s) * (1.0 - smoothstep(fade, 1.0, s)) ** 1.3 * swell   # fades in well above the cup
+    w = gain * env * core
     x, y = pos[..., 0], pos[..., 1]
     behind = None if back is None else np.broadcast_to(back_mask[:, None], x.shape)
 
@@ -347,17 +364,36 @@ def draw_ribbon(layer, curve, rng, lat, g, q, gain, width, warm, fade=0.45, haze
             back.add(px[behind], py[behind], pw[behind], warm)
 
     for _copy in range(3):
-        puff(x, y, 0.3 * w, 1.5 * g.s)                            # soft filaments
+        puff(x, y, 0.3 * w * vis, 1.5 * g.s)                       # torn strands
     sig = 0.55 * half + 6.0 * g.s
     for _copy in range(4):
-        puff(x, y, 0.45 * w, sig)                                 # body of the ribbon
+        puff(x, y, 0.45 * w * (0.55 + 0.45 * vis), sig)            # body of the ribbon
     for _copy in range(3):
-        puff(x, y, 0.25 * haze * w, 2.8 * sig)                    # haze
-    return x.ravel(), y.ravel(), w.ravel()
+        puff(x, y, 0.25 * haze * w, 2.8 * sig)                     # haze
+    return x.ravel(), y.ravel(), (w * vis).ravel()
+
+
+def stray_wisps(curve, rng, g, count):
+    """Short strands that break away from a ribbon at random points and drift off."""
+    m = curve.shape[0]
+    out = []
+    for _ in range(count):
+        i = int(rng.integers(int(0.08 * m), int(0.85 * m)))
+        p = curve[i]
+        t = curve[min(i + 1, m - 1)] - curve[max(i - 1, 0)]
+        t = t / (np.linalg.norm(t) + 1e-9)
+        side = np.array([-t[1], t[0]])
+        ang = rng.uniform(0.35, 1.2) * (-1.0 if rng.random() < 0.5 else 1.0)
+        d = t * math.cos(ang) + side * math.sin(ang)
+        length = rng.uniform(60.0, 220.0) * g.s
+        ctrl = np.array([p, p + d * length * 0.5 + rng.normal(0.0, 0.18 * length, 2),
+                         p + d * length + rng.normal(0.0, 0.3 * length, 2)])
+        out.append(spline_curve(ctrl, 0.7 * g.s))
+    return out
 
 
 def wandering_ribbons(rng, count):
-    """Straight-ish rising ribbons without curls, to fill the column between the designed ones."""
+    """Rising ribbons without curls, to fill the column between the designed ones."""
     out = []
     for _ in range(count):
         x, y, route = 0.0, 0.0, []
@@ -370,19 +406,30 @@ def wandering_ribbons(rng, count):
 
 
 def draw_steam(g, front, rng, lat, q):
-    """Steam: designed ribbons rising from the coffee surface."""
+    """Steam: designed ribbons rising from the coffee surface, with stray strands peeling off them."""
     samples = []
-    routes = STEAM_RIBBONS + wandering_ribbons(rng, int(3 * q))
-    for route in routes:
+    routes = [(route, 0.12) for route in STEAM_RIBBONS] + [(route, 0.3) for route in wandering_ribbons(rng, int(4 * q))]
+    for route, bow in routes:
         a = rng.uniform(0.0, 2.0 * math.pi)
         rr = 0.9 * LIQUID * math.sqrt(rng.random())
         start = (rr * math.cos(a), -rr * math.sin(a) * g.se)      # a point on the coffee surface
-        ctrl = ribbon_points(rng, start, route)
+        ctrl = ribbon_points(rng, start, route, bow)
         curve = np.stack([g.cx + ctrl[:, 0] * g.R, g.ytop - ctrl[:, 1] * g.R], axis=1)
         curve = spline_curve(curve, 0.6 * g.s)
         designed = any(seg[0] == "l" for seg in route)
-        samples.append(draw_ribbon(front, curve, rng, lat, g, q, rng.uniform(0.45, 0.65) if designed else 0.25,
-                                   rng.uniform(20.0, 34.0), WARM_STEAM))
+        gain = rng.uniform(0.42, 0.62) if designed else rng.uniform(0.20, 0.28)
+        width = rng.uniform(20.0, 34.0)
+        samples.append(draw_ribbon(front, curve, rng, lat, g, q, gain, width, WARM_STEAM))
+        for stray in stray_wisps(curve, rng, g, 2):
+            samples.append(draw_ribbon(front, stray, rng, lat, g, q, 0.4 * gain, rng.uniform(7.0, 12.0),
+                                       WARM_STEAM, fade=0.15, filaments=(3, 7)))
+
+    # a breath of uneven haze around the whole plume
+    X, Y = pixel_grid(g)
+    texture = np.clip(0.55 + 0.9 * fbm(X / (120.0 * g.s), Y / (120.0 * g.s), lat, 3), 0.0, None)
+    front.i += 0.12 * gaussian_blur(front.i, 38.0 * g.s) * texture
+    if front.use_warm:
+        front.k += 0.12 * gaussian_blur(front.k, 38.0 * g.s) * texture
     return samples
 
 
@@ -402,7 +449,7 @@ def draw_swirls(g, front, back, rng, lat, q):
         sx, sy, z = g.surface(th, hh, ff)
         curve = spline_curve(np.stack([sx, sy], axis=1), 0.7 * g.s)
         depth = np.interp(np.linspace(0.0, 1.0, curve.shape[0]), s, z)
-        draw_ribbon(front, curve, rng, lat, g, q, rng.uniform(0.20, 0.30), rng.uniform(14.0, 22.0),
+        draw_ribbon(front, curve, rng, lat, g, q, rng.uniform(0.22, 0.32), rng.uniform(14.0, 22.0),
                     WARM_SWIRL, fade=0.5, back=back, back_mask=depth < 0.0)
 
 
@@ -420,21 +467,21 @@ def draw_floor(g, back, front, fx, rng, lat, q):
     for _ in range(int(7 * q)):
         a = rng.uniform(0.0, 2.0 * math.pi)
         cir = -1.0 if rng.random() < 0.5 else 1.0
-        r = 0.72
+        r = 0.95
         start = (r * math.cos(a), r * math.sin(a))
         route = []
         for _step in range(2):
             a += cir * rng.uniform(0.8, 1.4)
             r += rng.uniform(0.55, 0.95)
             route.append(("w", r * math.cos(a), r * math.sin(a)))
-        route.append(("l", rng.uniform(0.35, 0.6), cir, rng.uniform(0.7, 1.1)))
+        route.append(("l", rng.uniform(0.45, 0.70), cir, rng.uniform(0.7, 1.1)))
         a += cir * 0.7
         r += 0.45
         route.append(("w", r * math.cos(a), r * math.sin(a)))
-        ctrl = ribbon_points(rng, start, route)
+        ctrl = ribbon_points(rng, start, route, bow=0.35)          # bowed, so the mist never looks like straight bars
         curve = np.stack([g.cx + ctrl[:, 0] * g.R, g.ybot - ctrl[:, 1] * g.R * g.se], axis=1)
         curve = spline_curve(curve, 0.7 * g.s)
-        draw_ribbon(front, curve, rng, lat, g, q, rng.uniform(0.16, 0.24), rng.uniform(26.0, 40.0),
+        draw_ribbon(front, curve, rng, lat, g, q, rng.uniform(0.13, 0.19), rng.uniform(22.0, 34.0),
                     WARM_SWIRL, fade=0.4, back=back, back_mask=curve[:, 1] < g.ybot)
 
 
@@ -444,8 +491,8 @@ def glass_shade(nx, ny, nz, g):
     """Translucent glossy material: dark base, bright grazing angles, two specular streaks."""
     ce, se = g.ce, g.se
     ndv = np.clip(ny * ce + nz * se, 0.0, 1.0)
-    out = 0.07 + 0.26 * (1.0 - ndv) ** 2.0
-    for light, broad, tight in (((-0.55, 0.45, 0.70), 0.22, 0.90), ((0.75, 0.35, 0.56), 0.16, 0.70)):
+    out = 0.10 + 0.34 * (1.0 - ndv) ** 2.0
+    for light, broad, tight in (((-0.55, 0.45, 0.70), 0.28, 0.90), ((0.75, 0.35, 0.56), 0.20, 0.70)):
         hx, hy, hz = light[0], light[1] + ce, light[2] + se
         norm = math.sqrt(hx * hx + hy * hy + hz * hz)
         ndh = np.clip((nx * hx + ny * hy + nz * hz) / norm, 0.0, 1.0)
@@ -467,8 +514,8 @@ def draw_cup_body(g, cup, lat, cB):
     ny = np.full_like(nx, -slope)
     norm = np.sqrt(nx * nx + ny * ny + nz * nz)
     shade = glass_shade(nx / norm, ny / norm, nz / norm, g)
-    wisps = fbm(sx / (70.0 * g.s), sy / (70.0 * g.s), lat, 3)
-    shade *= 0.70 + 0.60 * np.clip(0.5 + 0.8 * wisps, 0.0, 1.0)
+    wisps = fbm(sx / (170.0 * g.s), sy / (26.0 * g.s), lat, 3)     # streaks stretched around the wall
+    shade *= 0.75 + 0.55 * np.clip(0.5 + 0.9 * wisps, 0.0, 1.0)
     acc = Layer(g.w, g.h)
     cnt = np.zeros((g.h, g.w))
     deposit(acc.i, sx, sy, shade)
@@ -478,31 +525,16 @@ def draw_cup_body(g, cup, lat, cB):
     cup.k += body * WARM_BODY
 
 
-def draw_cup_filaments(g, cup, back, rng, lat, q):
-    """Lathe-like streaks on the wall: rings and meridians, back ones are seen through the body."""
-    for kind, count, strength in (("ring", 24, 1.0), ("meridian", 10, 0.6)):
-        for _ in range(int(count * q)):
-            if kind == "ring":
-                t = np.linspace(0.0, rng.uniform(0.9, 2.0 * math.pi), 1400)
-                th = t + rng.uniform(0.0, 2.0 * math.pi)
-                hh = np.full_like(t, rng.uniform(0.05, 0.95))
-                hh = hh + 0.012 * noise1(th * 2.2 + rng.uniform(0, 100), lat)
-            else:
-                t = np.linspace(0.0, 1.0, 900)
-                hh = 0.02 + 0.96 * t
-                th = rng.uniform(0.0, 2.0 * math.pi) + 0.05 * noise1(t * 9.0 + rng.uniform(0, 100), lat)
-            sx, sy, z = g.surface(th, hh)
-            s = t / t[-1]
-            env = np.sin(np.pi * s) ** 0.6
-            streak = 0.3 + 0.7 * np.clip(0.5 + 1.2 * noise1(t * 5.0 + rng.uniform(0, 100), lat), 0.0, 1.0) ** 1.3
-            w = 0.24 * strength * env * streak
-            front = z > 0
-            for layer, mask, gain in ((cup, front, 1.0), (back, ~front, 0.9)):
-                layer.add(sx[mask], sy[mask], gain * w[mask], WARM_BODY)
-                for _copy in range(2):
-                    layer.add(sx[mask] + rng.normal(0.0, 3.0 * g.s, mask.sum()),
-                              sy[mask] + rng.normal(0.0, 3.0 * g.s, mask.sum()),
-                              gain * 0.25 * w[mask], WARM_BODY)
+def draw_cup_wisps(g, cup, back, rng, lat, q):
+    """Soft streaks of light flowing around the wall: no lines, only out-of-focus bands."""
+    for _ in range(int(14 * q)):
+        th = np.linspace(0.0, rng.uniform(1.6, 2.0 * math.pi), 400) + rng.uniform(0.0, 2.0 * math.pi)
+        hh = rng.uniform(0.06, 0.94) + 0.02 * noise1(th * 1.5 + rng.uniform(0.0, 100.0), lat)
+        sx, sy, z = g.surface(th, hh)
+        curve = spline_curve(np.stack([sx, sy], axis=1), 0.7 * g.s)
+        depth = np.interp(np.linspace(th[0], th[-1], curve.shape[0]), th, z)
+        draw_ribbon(cup, curve, rng, lat, g, q, rng.uniform(0.05, 0.08), rng.uniform(9.0, 16.0), WARM_BODY,
+                    fade=0.35, back=back, back_mask=depth < 0.0, meander=0.0)
 
 
 def draw_top(g, cup, rng, lat):
@@ -516,7 +548,7 @@ def draw_top(g, cup, rng, lat):
     r = np.hypot(u, v)
     liquid = 0.13 + 0.07 * (1.0 - r * r)
     liquid += 0.35 * np.exp(-((r - 0.86) / 0.09) ** 2)                          # crema ring
-    liquid += 0.29 * np.exp(-(r / 0.22) ** 2)                                   # hot core
+    liquid += 0.18 * np.exp(-(r / 0.22) ** 2)                                   # hot core
     liquid += 0.18 * np.exp(-(((u + 0.35) / 0.5) ** 2 + ((v + 0.3) / 0.4) ** 2))  # sheen
     cup.i += liquid * c_liq
     cup.k += liquid * c_liq * WARM_LIQUID
@@ -534,11 +566,13 @@ def draw_top(g, cup, rng, lat):
         ang = phi + arm * math.pi + 0.5
         sx = g.cx + a * rs * np.cos(ang)
         sy = g.ytop + b * rs * np.sin(ang)
-        w = 0.85 * (1.0 - rs / 0.85) ** 0.8 * np.sin(np.pi * s) ** 0.4
-        cup.add(sx, sy, w, WARM_LIQUID)
+        w = 0.45 * (1.0 - rs / 0.85) ** 0.8 * np.sin(np.pi * s) ** 0.4
+        for _copy in range(3):
+            cup.add(sx + rng.normal(0.0, 3.5 * g.s, s.size), sy + rng.normal(0.0, 1.4 * g.s, s.size),
+                    w, WARM_LIQUID)
         for _copy in range(2):
-            cup.add(sx + rng.normal(0.0, 3.0 * g.s, s.size), sy + rng.normal(0.0, 1.2 * g.s, s.size),
-                    0.3 * w, WARM_LIQUID)
+            cup.add(sx + rng.normal(0.0, 9.0 * g.s, s.size), sy + rng.normal(0.0, 3.5 * g.s, s.size),
+                    0.6 * w, WARM_LIQUID)
 
     # rim tube along the ellipse
     n = 5000
@@ -674,7 +708,7 @@ def render(palette="blue", scale=1.0, seed=11, quality=1.0):
     X, Y = pixel_grid(g)
     cB = cup_body_coverage(g, X, Y)
     draw_cup_body(g, cup, lat, cB)
-    draw_cup_filaments(g, cup, back, rng, lat, quality)
+    draw_cup_wisps(g, cup, back, rng, lat, quality)
     draw_top(g, cup, rng, lat)
     draw_handle(g, cup, cB)
     samples = draw_steam(g, front, rng, lat, quality)

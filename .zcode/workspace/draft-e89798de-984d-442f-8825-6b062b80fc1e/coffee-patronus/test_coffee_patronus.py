@@ -83,6 +83,34 @@ class RasterTests(unittest.TestCase):
         self.assertGreater(np.abs(pts[:, 0]).max(), 40.0)      # a straight route would stay at x = 0
         self.assertAlmostEqual(pts[-1, 1], 200.0, delta=1.0)
 
+    def test_stray_wisps_start_on_the_parent_curve_and_have_length(self):
+        rng = np.random.default_rng(0)
+        g = cp.Geometry(270, 480)
+        parent = cp.spline_curve(np.array([[50.0, 400.0], [120.0, 250.0], [110.0, 100.0]]), 1.0)
+        strays = cp.stray_wisps(parent, rng, g, 6)
+        self.assertEqual(len(strays), 6)
+        for strand in strays:
+            self.assertLess(np.hypot(*(parent - strand[0]).T).min(), 1.0)     # begins on the parent ribbon
+            seg = np.hypot(*np.diff(strand, axis=0).T)
+            # a strand is 60..220 design px long before its random bow, so allow a generous band
+            self.assertGreater(seg.sum(), 30.0 * g.s)
+            self.assertLess(seg.sum(), 400.0 * g.s)
+            self.assertLess(seg.max(), 1.0)                                   # evenly sampled
+
+    def test_ribbon_splits_between_layers_by_depth(self):
+        rng = np.random.default_rng(1)
+        lat = cp.make_lattice(1)
+        g = cp.Geometry(120, 200)
+        curve = np.stack([np.linspace(10.0, 110.0, 200), np.full(200, 150.0)], axis=1)
+        front, back = cp.Layer(120, 200), cp.Layer(120, 200)
+        x, y, w = cp.draw_ribbon(front, curve, rng, lat, g, 1.0, 0.5, 6.0, 0.0, meander=0.0,
+                                 back=back, back_mask=np.linspace(0.0, 1.0, 200) < 0.5)
+        self.assertGreater(front.i.sum(), 0.0)
+        self.assertGreater(back.i.sum(), 0.0)
+        self.assertEqual(back.i[:60].sum(), 0.0)                              # nothing far above the ribbon
+        self.assertTrue(np.all(w >= 0.0))
+        self.assertEqual(w.size, x.size)
+
 
 class GeometryTests(unittest.TestCase):
     def test_cup_body_covers_the_wall_but_not_the_opening(self):
